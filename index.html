@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>準心顏色挑選器</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #202020;
+    color: white;
+    font-family: 'Microsoft JhengHei UI', 'PingFang TC', 'Noto Sans CJK TC', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+  }
+  h1 { color: #FFD700; margin: 8px 0; font-size: 22px; text-align: center; }
+  .progress { font-size: 14px; margin: 4px 0; }
+  .bg-label { font-size: 12px; color: #aaa; margin-bottom: 12px; }
+  .pair {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .panel {
+    width: min(42vw, 360px);
+    aspect-ratio: 1;
+    border: 3px solid #FFD700;
+    border-radius: 4px;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.05s;
+    user-select: none;
+  }
+  .panel:hover { transform: scale(1.01); }
+  .panel:active { transform: scale(0.99); }
+  .dot-bg {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: black;
+    transform: translate(-50%, -50%);
+  }
+  .dot {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .instruction { margin: 12px 0; font-size: 14px; }
+  .controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 4px;
+  }
+  button {
+    background: #333;
+    color: white;
+    border: 1px solid #555;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    border-radius: 4px;
+  }
+  button:hover { background: #444; border-color: #777; }
+  button:active { background: #555; }
+
+  .result { display: none; flex-direction: column; align-items: center; max-width: 800px; }
+  .result.active { display: flex; }
+  .result h1 { font-size: 28px; margin-bottom: 4px; }
+  .result-sub { font-size: 12px; color: #aaa; margin-bottom: 16px; }
+  .top3 {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin: 16px 0;
+  }
+  .rank {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    min-width: 160px;
+  }
+  .rank-label { font-weight: bold; font-size: 14px; margin-bottom: 6px; }
+  .rank-canvas {
+    width: 160px;
+    height: 160px;
+    border: 2px solid #444;
+    border-radius: 4px;
+    position: relative;
+  }
+  .rank-name { margin-top: 8px; font-size: 14px; }
+  .rank-hex { font-family: 'Consolas', 'Menlo', monospace; font-size: 16px; color: #FFD700; font-weight: bold; }
+  .rank-rgb { font-family: 'Consolas', 'Menlo', monospace; font-size: 11px; color: #ddd; margin-top: 2px; }
+  .rank-stats { font-size: 11px; color: #888; margin-top: 2px; }
+  .hint { font-size: 13px; color: #ccc; margin: 14px 0 8px; text-align: center; line-height: 1.5; }
+
+  .match-view { display: flex; flex-direction: column; align-items: center; }
+  .match-view.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="match-view" id="matchView">
+  <h1>準心顏色挑選器</h1>
+  <div class="progress" id="progress"></div>
+  <div class="bg-label" id="bgLabel"></div>
+  <div class="pair">
+    <div class="panel" id="panelA" onclick="choose('a')">
+      <div class="dot-bg"></div>
+      <div class="dot" id="dotA"></div>
+    </div>
+    <div class="panel" id="panelB" onclick="choose('b')">
+      <div class="dot-bg"></div>
+      <div class="dot" id="dotB"></div>
+    </div>
+  </div>
+  <div class="instruction">點擊比較顯眼的那一邊</div>
+  <div class="controls">
+    <button onclick="rerollBg()">換個背景再看一次</button>
+    <button onclick="skip()">都差不多 (跳過)</button>
+    <button onclick="showWinner()">提早結束看結果</button>
+  </div>
+</div>
+
+<div class="result" id="resultView">
+  <h1>你的準心顏色排行</h1>
+  <div class="result-sub" id="resultSub"></div>
+  <div class="top3" id="top3"></div>
+  <div class="bg-label" id="resultBgLabel"></div>
+  <div class="hint" id="resultHint"></div>
+  <div class="controls">
+    <button onclick="playMore()">再玩 8 場 (微調排序)</button>
+    <button onclick="restart()">重新開始</button>
+  </div>
+</div>
+
+<script>
+const CANDIDATES = [
+  ['Cyan 青', '#00FFFF'],
+  ['Light Blue 淺藍', '#00B5FF'],
+  ['Magenta 洋紅', '#FF00FF'],
+  ['Hot Pink 桃紅', '#FF1493'],
+  ['Lemon Yellow 檸檬黃', '#FFFF00'],
+  ['Lime Green 萊姆綠', '#88FF00'],
+  ['Mint 薄荷綠', '#00FF88'],
+  ['White 白', '#FFFFFF'],
+  ['Teal 鴨綠', '#00CED1'],
+  ['Gold 金', '#FFD700'],
+  ['Spring Green 春綠', '#00FA9A'],
+  ['Sky Blue 天藍', '#87CEEB'],
+  ['Coral 珊瑚', '#FF7F50'],
+  ['Orange 橘', '#FF8C00'],
+  ['Orchid 蘭紫', '#DA70D6'],
+  ['Aquamarine 海藍', '#7FFFD4'],
+];
+
+const BACKGROUNDS = [
+  ['天空 / 雪地', '#D8E8F0'],
+  ['草地 / 樹叢', '#4A6B2E'],
+  ['土地 / 沙', '#8B6F47'],
+  ['混凝土 / 灰牆', '#888888'],
+  ['陰影 / 暗處', '#2A2A2A'],
+  ['白牆 / 室內', '#E8E8E8'],
+  ['日落 / 火光', '#D4805C'],
+  ['森林', '#3A4F2A'],
+  ['夜景', '#15151F'],
+  ['混雜中性色', '#A8A0B8'],
+];
+
+const INITIAL_TARGET = 24;
+const EXTRA_BATCH = 8;
+const ELO_K = 24;
+
+let ratings, matches, wins, pairHistory, completed, target;
+let a, b, bg;
+
+function init() {
+  ratings = {};
+  matches = {};
+  wins = {};
+  for (const [name] of CANDIDATES) {
+    ratings[name] = 1000;
+    matches[name] = 0;
+    wins[name] = 0;
+  }
+  pairHistory = new Set();
+  completed = 0;
+  target = INITIAL_TARGET;
+}
+
+function pairKey(n1, n2) {
+  return [n1, n2].sort().join('|');
+}
+
+function pickPair() {
+  const sorted = CANDIDATES.slice().sort((x, y) => {
+    const dm = matches[x[0]] - matches[y[0]];
+    if (dm !== 0) return dm;
+    return Math.random() - 0.5;
+  });
+  const ca = sorted[0];
+
+  const others = CANDIDATES.filter(c => c[0] !== ca[0]);
+  others.sort((x, y) => {
+    const px = pairHistory.has(pairKey(ca[0], x[0])) ? 1 : 0;
+    const py = pairHistory.has(pairKey(ca[0], y[0])) ? 1 : 0;
+    if (px !== py) return px - py;
+    const dx = Math.abs(ratings[x[0]] - ratings[ca[0]]) + Math.random() * 30;
+    const dy = Math.abs(ratings[y[0]] - ratings[ca[0]]) + Math.random() * 30;
+    return dx - dy;
+  });
+  const cb = others[0];
+  pairHistory.add(pairKey(ca[0], cb[0]));
+  return [ca, cb];
+}
+
+function updateElo(winnerName, loserName) {
+  const rw = ratings[winnerName];
+  const rl = ratings[loserName];
+  const ew = 1 / (1 + Math.pow(10, (rl - rw) / 400));
+  ratings[winnerName] = rw + ELO_K * (1 - ew);
+  ratings[loserName] = rl - ELO_K * (1 - ew);
+}
+
+function nextMatch() {
+  if (completed >= target) {
+    showWinner();
+    return;
+  }
+  [a, b] = pickPair();
+  bg = BACKGROUNDS[Math.floor(Math.random() * BACKGROUNDS.length)];
+  render();
+}
+
+function render() {
+  document.getElementById('panelA').style.background = bg[1];
+  document.getElementById('panelB').style.background = bg[1];
+  document.getElementById('dotA').style.background = a[1];
+  document.getElementById('dotB').style.background = b[1];
+  document.getElementById('progress').textContent =
+    `第 ${completed + 1} 場　/　目標 ${target} 場`;
+  document.getElementById('bgLabel').textContent = `背景模擬：${bg[0]}`;
+}
+
+function choose(side) {
+  const winner = side === 'a' ? a : b;
+  const loser = side === 'a' ? b : a;
+  updateElo(winner[0], loser[0]);
+  wins[winner[0]] += 1;
+  matches[winner[0]] += 1;
+  matches[loser[0]] += 1;
+  completed += 1;
+  nextMatch();
+}
+
+function rerollBg() {
+  let newBg = bg;
+  while (newBg === bg) {
+    newBg = BACKGROUNDS[Math.floor(Math.random() * BACKGROUNDS.length)];
+  }
+  bg = newBg;
+  render();
+}
+
+function skip() {
+  matches[a[0]] += 1;
+  matches[b[0]] += 1;
+  completed += 1;
+  nextMatch();
+}
+
+function playMore() {
+  target = completed + EXTRA_BATCH;
+  document.getElementById('matchView').classList.remove('hidden');
+  document.getElementById('resultView').classList.remove('active');
+  nextMatch();
+}
+
+function restart() {
+  init();
+  document.getElementById('matchView').classList.remove('hidden');
+  document.getElementById('resultView').classList.remove('active');
+  nextMatch();
+}
+
+function hexToRgb(h) {
+  h = h.replace('#', '');
+  return [
+    parseInt(h.substr(0, 2), 16),
+    parseInt(h.substr(2, 2), 16),
+    parseInt(h.substr(4, 2), 16),
+  ];
+}
+
+function showWinner() {
+  if (completed === 0) return;
+
+  document.getElementById('matchView').classList.add('hidden');
+  document.getElementById('resultView').classList.add('active');
+
+  const ranked = CANDIDATES.slice().sort((x, y) => ratings[y[0]] - ratings[x[0]]);
+  const top3 = ranked.slice(0, 3);
+
+  document.getElementById('resultSub').textContent = `（共比較 ${completed} 場）`;
+
+  const sampleBg = BACKGROUNDS[Math.floor(Math.random() * BACKGROUNDS.length)];
+  document.getElementById('resultBgLabel').textContent = `背景：${sampleBg[0]}`;
+
+  const rankLabels = ['★ 第 1 名', '第 2 名', '第 3 名'];
+  const rankColors = ['#FFD700', '#cccccc', '#cd7f32'];
+
+  const top3El = document.getElementById('top3');
+  top3El.innerHTML = '';
+
+  top3.forEach(([name, hex], i) => {
+    const [r, g, b] = hexToRgb(hex);
+    const div = document.createElement('div');
+    div.className = 'rank';
+    div.innerHTML = `
+      <div class="rank-label" style="color: ${rankColors[i]}">${rankLabels[i]}</div>
+      <div class="rank-canvas" style="background: ${sampleBg[1]}">
+        <div class="dot-bg"></div>
+        <div class="dot" style="background: ${hex}"></div>
+      </div>
+      <div class="rank-name">${name}</div>
+      <div class="rank-hex">${hex}</div>
+      <div class="rank-rgb">R ${r}   G ${g}   B ${b}</div>
+      <div class="rank-stats">勝率 ${wins[name]}/${matches[name]}</div>
+    `;
+    top3El.appendChild(div);
+  });
+
+  const [, winnerHex] = top3[0];
+  const [wr, wg, wb] = hexToRgb(winnerHex);
+  document.getElementById('resultHint').textContent =
+    `挑出來的 RGB：　R = ${wr}　　G = ${wg}　　B = ${wb}　　(填入遊戲設定)`;
+}
+
+init();
+nextMatch();
+</script>
+
+</body>
+</html>
